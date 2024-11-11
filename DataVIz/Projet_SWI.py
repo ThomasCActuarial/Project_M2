@@ -22,12 +22,14 @@ data['DATE'] = pd.to_datetime(data['DATE'], format='%Y%m')
 
 data['SPEI_1'] = data['PRELIQ_MENS']-data['ETP_MENS']
 
+data["Key"]= data['LAMBY'].apply(str).str.cat( data['LAMBX'].apply(str))
 
+#%%
 #regroupement des coordonnées par LAMBX et LAMBY
-grouped_data = data.groupby(['LAMBX','LAMBY']).sum().reset_index()
-grouped_data['bloc'] = ['BLOC_' + str(i+1)] for i in range(len(grouped_data))]
+grouped_data = data.groupby(['Key'])
+#grouped_data['bloc'] = ['BLOC_' + str(i+1) for i in range(len(grouped_data))]
 
 
 #calcul de la moyenne glissante sur 3 mois
 
-data[Rolling_sum_SPEI] = data['SPEI1'].rolling(windows = 3).mean()
+#data[Rolling_sum_SPEI] = data['SPEI_1'].rolling(windows = 3).mean()
