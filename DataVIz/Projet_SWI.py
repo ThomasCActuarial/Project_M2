@@ -14,7 +14,8 @@ import pandas as pd
 import sklearn as sk
 import numpy as np
 from datetime import datetime 
-from shapely.geometry import shape, Point
+import math
+import pyproj as p
 #%%
 df4 = pd.read_csv('data\MENS_SIM2_2010-2019.csv',delimiter=';' )
 df5 = pd.read_csv('data\MENS_SIM2_latest-2020-2024.csv',delimiter=';' )
@@ -37,7 +38,7 @@ data['DATE'] = pd.to_datetime(data['DATE'], format='%Y%m')
 
 data['SPEI_1'] = data['PRELIQ_MENS']-data['ETP_MENS']
 
-data["KEY"] = data['LAMBY'].apply(str).str.cat( data['LAMBX'].apply(str))
+data["KEY"] = data['LAMBY'].apply(str).str.cat( data['LAMBX'].apply(str), sep=",")
 data=data.sort_values(by=['KEY', 'DATE']).reset_index(drop=True)
 #%%
 
@@ -62,11 +63,57 @@ sk.linear_model(    )
 
 
 
+
+
 #%%
         
-        
-        
-sk.linear_model.fit(  train_data )
+
+
+
+
+def distance_haversine(coord1, coord2):
+    R = 6371.0  
+    
+    # Convertir les degrés en radians
+    lat1, lon1 = map(math.radians, coord1)
+    lat2, lon2 = map(math.radians, coord2)
+    
+    # Différences des coordonnées
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    
+    # Formule haversine
+    a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    
+    return R * c
+
+def coordonnee_plus_proche(liste_coordonnees, coordonnee_cible):
+    coordonnee_proche = min(liste_coordonnees, key=lambda c: distance_haversine(c, coordonnee_cible))
+    return coordonnee_proche
+ 
+    
+inProj = p.CRS('epsg:2154')
+outProj =p.CRS('epsg:4326')
+transformer = p.Transformer.from_crs(inProj, outProj)
+
+transformer.transform(52.067567, 5.068913)    
+    
+ 
+    
+ 
+    
+ 
+def coordone2(xy,transformer):
+    
+    cord=xy.split(",")     
+    x1= int(cord[0])
+    y1= int(cord[1])
+    x2,y2 = transformer.transform(x1,y1)
+    cord = str(x2) + "," +str(y2)
+    return cord
+
+#w = data["KEY"].apply(coordone2)
         
         
         
