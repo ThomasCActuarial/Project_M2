@@ -1,1 +1,156 @@
 
+https://colab.research.google.com/drive/1Bofw0q3dyqABQ5PKrEHLgiCJrkVHcVOI?usp=sharing
+###** Project TVE**
+Thomas
+
+Jack 
+
+Jeffrey
+
+
+## **Problématique :**
+
+
+    On veut réaliser une prédiction d'un niveau de retour de 200 ans sur le marché immobilier français. ( exemple :  TP 2 dowjones )
+
+## **1.Description et traitement des données**
+
+install.packages("readxl")
+install.packages('ismev')
+install.packages('extRemes')
+install.packages('evir')
+
+
+
+library(readxl)
+library('ismev')
+library('extRemes')
+library('evir')
+
+library(stats)
+
+
+
+dataB <- read_excel("/prix-immo-paris-1200-2012_cle2f2d1a.xls", , sheet = 2 , range = "a4:b816" )
+data <- data.frame(dataB)
+C=data$Consumer.price.index[2:812]
+B=data$Consumer.price.index[1:811]
+RateB = C/B - 1
+
+# On selection l'évolution ds 200 dernière année pour notre étude ( le plus fiable) le reste sera utilise rpour mesure la fiabilité de nos résultat
+
+Rate= -RateB[ 612 : 811]
+# on s'interesse au pert donc le maximum du negatif
+
+
+Rate
+
+plot( data$Year[1:811],RateB , type = "l")
+
+summary(Rate)
+boxplot(Rate)
+#chisq.test(Rate + 1 )  # O nteste l'indepence qui inveriente a translation et permet de aire un
+
+#**2. Analyse univariée**
+
+# **2.1 Méthode Peak Over Threshold**
+
+En étudiant les donnée nous pour voirs des point de donnée particulier.
+On essaye l'approche par  Peak over threshold. 
+   On trace un Mean residual life plot pour capter le seuil (lim) à partir duquel les observations au dessus/en dessous peuvent être considérées comme des valeurs extrêmes.
+
+
+---
+
+
+
+LR=sort(Rate)
+
+#
+lim = -0.01
+mrl.plot(Rate)
+abline(v=lim)
+
+length(Rate[Rate>lim])
+
+NB : il faudrait penser à juster le choix du seuil avec des arguments plus solides et pertinents.
+
+On est a peu près lineaire après une perte de 50 bps ,supposons pour 
+
+1.   Élément de liste
+2.   Élément de liste
+
+le moment que cela est suffisant , il y a 56 point apres cette perte , voir An est pas fixe
+changer le tresh
+
+  En s'inspirant du théorème vu en cours (Balkema and de Haan, 1974; Pickands, 1975), on peut supposer que la distribution des excès \Y_u = \X_i - u sachant que X > u suit une loi de Pareto généralisée.
+   On estime donc les paramètres de la GP (Pareto généralisée) par la méthode du maximum de vraisemblance.
+
+fit_immo <- fevd(x =  Rate  , threshold = lim,  type = "GP")
+summary(fit_immo)
+
+ci.fevd(x = fit_immo, type = "parameter")
+
+
+# **2.2 - Méthode par blocs maxima**
+
+BlockMaxima <- function(data, m) {
+  # m désigne la taille d'un bloc
+  # Initialiser un vecteur vide pour stocker les maxima
+  M <- numeric(0)
+
+  # Longueur des données
+  nm <- length(data)
+
+  # Vérifier que la longueur des données est un multiple de m
+  if (nm %% m != 0) {
+    stop("La longueur des données n'est pas un multiple de m.")
+  }
+
+  # Nombre de blocs
+  n <- nm / m
+
+  # Parcourir les blocs
+  for (i in 1:n) {
+    # Extraire les éléments du bloc
+    bloc <- data[((i - 1) * m + 1):(i * m)]
+    # Calculer le maximum du bloc
+    M <- c(M, max(bloc))
+  }
+
+  # Retourner le vecteur des maxima
+  return(M)
+}
+
+# Exemple d'utilisation
+data <- c(5, 3, 9, 1, 8, 7, 2, 4, 6, 10)
+m <- 2
+BlockMaxima(data, m)
+
+
+length(Rate)
+
+data <- Rate
+maxima <- BlockMaxima(data,5)
+
+diviseurs(length(Rate))
+length(Rate)
+length(BlockMaxima(data,5))
+
+fit_maxima <- fevd(x = maxima ,  type = "GEV")
+summary(fit_maxima)
+
+
+fit_maxima_moments <- fevd(x = maxima, type = "GEV", method = 'Lmoments')
+summary(fit_maxima_moments)
+
+
+ Le paramètre de forme \gamma est négatif dans les deux méthodes d'estimations (maximum de vraisemblance et moments), on peut donc déduire qu'il existe 2 suites (a_n) et (b_n) qui permettent de normaliser le jeu de données et converge vers une distribution de Weibull inverse
+
+plot(fit_maxima, type = "qq")
+plot(fit_maxima, type = "hist")
+plot(fit_maxima, type = "rl")
+
+library(MASS)
+Weibull_data <- fitdistr(maxima, densfun = "weibull")
+summary(Weibull_data)
