@@ -13,85 +13,68 @@ from shapely.geometry import Point
 import pandas as pd
 import sklearn as sk
 import numpy as np
-from datetime import datetime 
-
 import math
 import geopandas as gpd
-#%%
+
+#
+#https://www.data.gouv.fr/fr/datasets/contours-des-communes-de-france-simplifie-avec-regions-et-departement-doutre-mer-rapproches/
+#
+
+#%% Lecture des données
+CAT= pd.read_csv("data/CATNAT.csv")
+Commune = gpd.read_file("data/commune.json" )    
 df4 = pd.read_csv('data\MENS_SIM2_2010-2019.csv',delimiter=';' )
 df5 = pd.read_csv('data\MENS_SIM2_latest-2020-2024.csv',delimiter=';' )
 
 df3 = pd.read_csv('data\MENS_SIM2_2000-2009.csv',delimiter=';')
 df2 = pd.read_csv('data\MENS_SIM2_1990-1999.csv',delimiter=';')
 df1 = pd.read_csv('data\MENS_SIM2_1980-1989.csv',delimiter=';')
-
-#del df1, df2, df3, df4 ,df5
-    #%%
-
 data=pd.concat([df1,df2,df3,df4,df5] ,ignore_index=True)
+del df1, df2, df3, df4 ,df5
+#%% On limite les donnée qu'on utilise
+CAT = CAT.drop(columns=['cod_nat_catnat', 'num_risque_jo', 'dat_pub_jo', 'dat_maj'])
+Commune = Commune.drop(columns=[ 'id', 'dep', 'reg', 'xcl2154', 'ycl2154',        ])
 data = data.drop(columns=["SSWI1_MENS","SSWI6_MENS","SSWI12_MENS"])
+dates = pd.date_range(end="2022-12-31", periods=60, freq='M')
 
-
-  #%%
-
+ #%%
+CAT['dat_fin'] = pd.to_datetime(CAT['dat_fin'])
+CAT['dat_deb'] = pd.to_datetime(CAT['dat_deb'])
+CAT['dat_pub_arrete'] = pd.to_datetime(CAT['dat_pub_arrete'])
 data['DATE'] = pd.to_datetime(data['DATE'], format='%Y%m')
-
-
 data['SPEI_1'] = data['PRELIQ_MENS']-data['ETP_MENS']
-
 data["KEY"] = data['LAMBY'].apply(str).str.cat( data['LAMBX'].apply(str), sep=",")
-data=data.sort_values(by=['KEY', 'DATE']).reset_index(drop=True)
-#%%
-grouped_data = data.groupby(['KEY'])
-       
-#%%
-dataTest = data[ data["DATE"] !=datetime(2024,10,1,00,00,00)]
 
-#%%
-    
-def distance_haversine(coord1, coord2):
-    R = 6371.0  
-   
-    # Convertir les degrés en radians
-    lat1, lon1 = map(math.radians, coord1)
-    lat2, lon2 = map(math.radians, coord2)
-    
-    # Différences des coordonnées
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    
-    # Formule haversine
-    a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    
-    return R * c
+#%% On garde que les donnée que l'on veux garder
 
-def coordonnee_plus_proche(liste_coordonnees, coordonnee_cible):
-    coordonnee_proche = min(liste_coordonnees, key=lambda c: distance_haversine(c, coordonnee_cible))
-    return coordonnee_proche
- 
-    
+CAT = CAT[CAT['dat_fin']>=min(dates) ]
+dates = pd.DataFrame(dates)
+#%% On crée notre base de donnée
 
- 
-from lambert import Lambert93, convertToWGS84Deg   
-  
-#%% 
-def coordone2(xy):
-    
-    cord=xy.split(",")     
-    x1= int(cord[0])
-    y1= int(cord[1])
-    cord = Point(x1,y1)
-    return cord
-#%%
-data["point"] = data["KEY"].apply(coordone2)
-        
+Communes = Commune.merge(dates, how='cross')
+
+Communes["dry"] = 0
+
+#%% On implimante nos catasphrophe
       
+for code in pd.unique(Communes["codgeo"]):
+    # Filter CAT for the current code
+    CATNAT = CAT[CAT["cod_commune"] == code]
+    
+    if len(CATNAT) > 0:
+        # Filter Communes for the current code
+        sample = Communes[Communes["codgeo"] == code]
         
-#%%        
+        for idx_sample, row_sample in sample.iterrows():
+            # Check each row in CATNAT for date range
+            for idx_catnat, row_catnat in CATNAT.iterrows():
+                if row_catnat["dat_deb"] <= row_sample["DATE"] <= row_catnat["dat_fin"]:
+                    Communes.loc[idx_sample, "dry"] = 1  # Update 'dry' to 1
+       
         
 
 
-print(str(Lambert93.n()))
-pt = convertToWGS84Deg(780886, 6980743, Lambert93)
-print("Point latitude:" + str(pt.getY()) + " longitude:" + str(pt.getX()))        
+
+
+
+
