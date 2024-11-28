@@ -9,13 +9,15 @@ Created on Mon Nov 11 11:56:50 2024
 #analyse de erreur est importante
 # Rapport environ 10 pages
 # Pas de presentation des algo mais justifier le choix des modèles
-from shapely.geometry import Point
+
 import pandas as pd
 import sklearn as sk
 import numpy as np
 import math
 import geopandas as gpd
-
+import plotly.express as px
+from shapely import wkt
+from shapely.geometry import Point
 #
 #https://www.data.gouv.fr/fr/datasets/contours-des-communes-de-france-simplifie-avec-regions-et-departement-doutre-mer-rapproches/
 #
@@ -36,6 +38,8 @@ CAT = CAT.drop(columns=['cod_nat_catnat', 'num_risque_jo', 'dat_pub_jo', 'dat_ma
 Commune = Commune.drop(columns=[ 'id', 'dep', 'reg', 'xcl2154', 'ycl2154',        ])
 data = data.drop(columns=["SSWI1_MENS","SSWI6_MENS","SSWI12_MENS"])
 dates = pd.date_range(end="2022-12-31", periods=60, freq='M')
+#%%
+
 
  #%%
 CAT['dat_fin'] = pd.to_datetime(CAT['dat_fin'])
@@ -49,29 +53,105 @@ data["KEY"] = data['LAMBY'].apply(str).str.cat( data['LAMBX'].apply(str), sep=",
 
 CAT = CAT[CAT['dat_fin']>=min(dates) ]
 dates = pd.DataFrame(dates)
+
 #%% On crée notre base de donnée
 
 Communes = Commune.merge(dates, how='cross')
-
+Communes = Communes.rename(columns={0: "DATE"})
 Communes["dry"] = 0
 
 #%% On implimante nos catasphrophe
-      
+i=0;
 for code in pd.unique(Communes["codgeo"]):
+    i+=1
     # Filter CAT for the current code
     CATNAT = CAT[CAT["cod_commune"] == code]
-    
+    if i%500==0:
+        print(i)
     if len(CATNAT) > 0:
-        # Filter Communes for the current code
         sample = Communes[Communes["codgeo"] == code]
-        
-        for idx_sample, row_sample in sample.iterrows():
-            # Check each row in CATNAT for date range
-            for idx_catnat, row_catnat in CATNAT.iterrows():
-                if row_catnat["dat_deb"] <= row_sample["DATE"] <= row_catnat["dat_fin"]:
-                    Communes.loc[idx_sample, "dry"] = 1  # Update 'dry' to 1
-       
-        
+
+        for idx_catnat, row_catnat in CATNAT.iterrows():
+            # Check if sample['DATE'] is within the date range [dat_deb, dat_fin]
+            condition = sample["DATE"].between(row_catnat["dat_deb"], row_catnat["dat_fin"])
+
+            # Update 'dry' to 1 where condition is True
+            Communes.loc[sample[condition].index, "dry"] = 1
+
+#%% Recuper les résultat précedent
+Communes=pd.read_pickle("CommunesCopy")
+
+
+#%%
+
+def create_annual_dry_map(data, geometry_col, date_col, dry_col, title="Dry Zones by Year"):
+    """
+    Crée une carte interactive annuelle avec des zones `dry=1` en rouge, et un slider pour l'année.
+
+    Args:
+    - data (pd.DataFrame or gpd.GeoDataFrame): Tableau contenant les géométries, les dates et `dry`.
+    - geometry_col (str): Colonne contenant les géométries (zones).
+    - date_col (str): Colonne contenant les dates (format '%Y-%m').
+    - dry_col (str): Colonne contenant les valeurs `dry` (0 ou 1).
+    - title (str): Titre de la carte.
+    """
+    # S'assurer que le tableau est un GeoDataFrame
+    if not isinstance(data, gpd.GeoDataFrame):
+        data = gpd.GeoDataFrame(data, geometry=data[geometry_col])
+
+    # S'assurer que la colonne de dates est au format datetime
+    data[date_col] = pd.to_datetime(data[date_col], format="%Y-%m")  # Convertir en datetime
+    data["year"] = data[date_col].dt.year  # Extraire l'année
+
+    # Filtrer uniquement les zones où dry=1 pour chaque géométrie et année
+    annual_data = data[data[dry_col] == 1].copy()
+
+    # Convertir les géométries en GeoJSON
+    geojson = annual_data.geometry.__geo_interface__
+
+    # Ajouter un identifiant unique pour chaque géométrie
+    annual_data["id"] = annual_data.index.astype(str)
+
+    # Créer une carte interactive avec Plotly Express
+    fig = px.choropleth_mapbox(
+        annual_data,
+        geojson=geojson,
+        locations="id",  # Utiliser l'identifiant unique
+        color="year",  # Utiliser l'année comme gradient de couleur
+        hover_name="year",
+        animation_frame="year",  # Slider sur l'année
+        mapbox_style="carto-positron",
+        title=title,
+        center={"lat": 46.5, "lon": 2.0},  # Centré sur la France (par défaut)
+        zoom=5,
+    )
+
+    # Ajuster la hauteur
+    fig.update_layout(height=700)
+
+    # Afficher la carte
+    fig.show()
+
+
+
+
+Communes2 = Communes[Communes["dry"]==1]
+create_annual_dry_map(Communes2,"geometry","DATE","dry")
+
+
+#%%
+
+data2=data[data.DATE > "2015-12-31"]
+geometry = [Point(xy) for xy in zip(data2["LAMBX"], data2["LAMBY"])]
+
+# Étape 2: Créer un GeoDataFrame avec le CRS Lambert 93
+gdf = gpd.GeoDataFrame(data2, geometry=geometry, crs="EPSG:2154")  # EPSG:2154 correspond à Lambert 93
+
+# Étape 3: Reprojeter en WGS 84 (EPSG:4326)
+gdf_wgs84 = gdf.to_crs(epsg=4326)  # EPSG:4326 correspond à WGS 84
+
+
+
 
 
 
