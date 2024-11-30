@@ -156,5 +156,27 @@ gdf_wgs84 = gdf.to_crs(epsg=4326)  # EPSG:4326 correspond à WGS 84
 
 
 
+# le petit code de Christopher 
+import pandas as pd
+
+# Création du DataFrame à partir des données
+data = {
+    "LAMBX": [600, 760, 840, 920, 1000, 1080, 1160, 1240],
+    "LAMBY": [24010, 23610, 23930, 24090, 24170, 23530, 23850, 23770]
+}
+df = pd.DataFrame(data)
+print(df)
+
+from pyproj import Transformer
+
+# Initialisation du transformateur Lambert 93 -> WGS84
+transformer = Transformer.from_crs("EPSG:2154", "EPSG:4326", always_xy=True)
+
+# Conversion des coordonnées
+df["Longitude"], df["Latitude"] = transformer.transform(df["LAMBX"], df["LAMBY"])
+print(df)
+
+
+
 
 
