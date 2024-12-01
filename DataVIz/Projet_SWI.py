@@ -18,6 +18,7 @@ import geopandas as gpd
 import plotly.express as px
 from shapely import wkt
 from shapely.geometry import Point
+from scipy.spatial import cKDTree
 #
 #https://www.data.gouv.fr/fr/datasets/contours-des-communes-de-france-simplifie-avec-regions-et-departement-doutre-mer-rapproches/
 #
@@ -156,7 +157,7 @@ gdf_wgs84 = gdf.to_crs(epsg=4326)  # EPSG:4326 correspond à WGS 84
 
 
 
-# le petit code de Christopher 
+# le petit code de Christopher  Qu'es ce que ce code vient faire là?  
 import pandas as pd
 
 # Création du DataFrame à partir des données
@@ -175,6 +176,82 @@ transformer = Transformer.from_crs("EPSG:2154", "EPSG:4326", always_xy=True)
 # Conversion des coordonnées
 df["Longitude"], df["Latitude"] = transformer.transform(df["LAMBX"], df["LAMBY"])
 print(df)
+
+
+#%%
+
+
+
+
+
+def nearest_temperature_by_time(ville, temperature, date_col_ville, date_col_temp):
+    """
+    Associe chaque Polygon de `ville` au point de `temperature` le plus proche,
+    en tenant compte de la proximité spatiale et du même mois/année.
+    """
+    # Extraire année et mois
+    ville = ville.copy()  # Créer une copie explicite pour éviter les modifications sur la vue
+    temperature = temperature.copy()
+
+    ville["year_month"] = pd.to_datetime(ville[date_col_ville]).dt.to_period("M")
+    temperature["year_month"] = pd.to_datetime(temperature[date_col_temp]).dt.to_period("M")
+
+    # Préparer un GeoDataFrame de résultats
+    results = []
+
+    # Pour chaque groupe de `year_month` dans `ville`
+    for period, ville_group in ville.groupby("year_month"):
+        # Filtrer temperature pour le même mois et année
+        temp_group = temperature[temperature["year_month"] == period]
+        
+        if temp_group.empty:
+            # Si pas de correspondance temporelle, ignorer ce groupe
+            continue
+
+        # Filtrer les géométries non valides dans `ville_group` et `temp_group`
+        ville_group = ville_group[ville_group.geometry.notnull()].copy()
+        temp_group = temp_group[temp_group.geometry.notnull()].copy()
+
+        temp_group = temp_group[temp_group.geometry.geom_type == "Point"]
+
+        # Calculer les centroïdes pour les Polygons dans `ville_group`
+        ville_group["centroid"] = ville_group.geometry.centroid
+
+        # Vérifier si les groupes sont toujours non vides après le filtrage
+        if ville_group.empty or temp_group.empty:
+            continue
+
+        # Construire un arbre spatial pour les points de `temp_group`
+        temp_coords = list(zip(temp_group.geometry.x, temp_group.geometry.y))
+        temp_tree = cKDTree(temp_coords)
+
+        # Obtenir les coordonnées des centroïdes de `ville_group`
+        ville_coords = list(zip(ville_group["centroid"].x, ville_group["centroid"].y))
+
+        # Trouver les plus proches voisins
+        distances, indices = temp_tree.query(ville_coords, k=1)
+
+        # Utiliser `.loc[]` pour attribuer les valeurs explicitement
+        ville_group.loc[:, "nearest_temp_index"] = temp_group.index.values[indices]
+        ville_group.loc[:, "distance_to_temp"] = distances
+
+        results.append(ville_group)
+
+    # Combiner tous les résultats
+    enriched_ville = pd.concat(results, ignore_index=True)
+
+    # Fusionner toutes les variables de température dans le GeoDataFrame enrichi
+    enriched_ville = enriched_ville.merge(
+        temperature, 
+        left_on="nearest_temp_index", 
+        right_index=True, 
+        suffixes=("_ville", "_temp")
+    )
+
+    return enriched_ville
+
+
+
 
 
 
