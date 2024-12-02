@@ -40,7 +40,7 @@ CAT['dat_fin'] = pd.to_datetime(CAT['dat_fin'])
 CAT['dat_deb'] = pd.to_datetime(CAT['dat_deb'])
 CAT['dat_pub_arrete'] = pd.to_datetime(CAT['dat_pub_arrete'])
 data['DATE'] = pd.to_datetime(data['DATE'], format='%Y%m')
-data['SPEI_1'] = data['PRELIQ_MENS']-data['ETP_MENS']
+
 data["KEY"] = data['LAMBY'].apply(str).str.cat( data['LAMBX'].apply(str), sep=",")
 # On garde que les donnée que l'on veux garder
 CAT = CAT[CAT['dat_fin']>=min(dates) ]
@@ -70,9 +70,9 @@ for code in pd.unique(Communes["codgeo"]):
 
 #%% Recuper les résultat précedent pour éviter d'avoir a refaire tourner le code
 Communes=pd.read_pickle("CommunesCopy")
+#%Communes=Communes.rename(columns= {"geometry" : "formeCommune" })
 
 
-#%%
 
 data2=data[data.DATE > "2015-12-31"]
 geometry = [Point(xy) for xy in zip(data2["LAMBX"], data2["LAMBY"])]
@@ -83,7 +83,7 @@ gdf = gpd.GeoDataFrame(data2, geometry=geometry, crs="EPSG:2154")  # EPSG:2154 c
 # Étape 3: Reprojeter en WGS 84 (EPSG:4326)
 gdf_wgs84 = gdf.to_crs(epsg=4326)  # EPSG:4326 correspond à WGS 84
 
-#%%
+
 
 def nearest_temperature_by_time(ville, temperature, date_col_ville, date_col_temp):
     """
@@ -152,85 +152,109 @@ def nearest_temperature_by_time(ville, temperature, date_col_ville, date_col_tem
 
 w = nearest_temperature_by_time(Communes,gdf_wgs84,"DATE","DATE")
 
-#%%
-# le petit code de Christopher  Qu'es ce que ce code vient faire là?  
-import pandas as pd
-
-# Création du DataFrame à partir des données
-dataChir = {
-    "LAMBX": [600, 760, 840, 920, 1000, 1080, 1160, 1240],
-    "LAMBY": [24010, 23610, 23930, 24090, 24170, 23530, 23850, 23770]
-}
-df = pd.DataFrame(data)
-print(df)
-
-from pyproj import Transformer
-
-# Initialisation du transformateur Lambert 93 -> WGS84
-transformer = Transformer.from_crs("EPSG:2154", "EPSG:4326", always_xy=True)
-
-# Conversion des coordonnées
-df["Longitude"], df["Latitude"] = transformer.transform(df["LAMBX"], df["LAMBY"])
-print(df)
 
 
 #%%
-from sklearn.model_selection import train_test_split
+import numpy as np
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+from sklearn.utils.class_weight import compute_class_weight
 
 # Define the features and target variable
 features = ['PRENEI_MENS', 'PRELIQ_MENS', 'PRETOTM_MENS', 'T_MENS', 'EVAP_MENS', 'ETP_MENS', 'SWI_MENS']
 X = w[features]  # Features
-y = w['dry']      # Target variable (binary: 1 or 0)
+y = w['dry']    # Target variable (binary: 1 or 0)
+
+# Compute class weights
+class_weights = compute_class_weight('balanced', classes=np.array([0, 1]), y=y)  # Convert [0, 1] to np.array
+class_weight_dict = {0: class_weights[0], 1: class_weights[1]}  # Create a dictionary for class weights
 
 # Split the data into training and testing sets
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
+# Set up the parameter grid for the class_weight of class 1 (we will use the balanced weights)
+param_grid = {
+    'class_weight': [class_weight_dict]  # Using computed balanced weights
+}
+
 # Initialize the Logistic Regression model
 model = LogisticRegression(max_iter=1000, random_state=42)
 
-# Train the model on the training data
-model.fit(X_train, y_train)
+# Perform Grid Search with Cross Validation
+grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=5, scoring='accuracy')
 
-# Predict on the testing data
-y_pred = model.predict(X_test)
+# Fit the grid search to the training data
+grid_search.fit(X_train, y_train)
+
+# Get the best parameters and model
+best_params = grid_search.best_params_
+best_model = grid_search.best_estimator_
+# Predict on the testing data with the best model
+y_pred = best_model.predict(X_test)
+# Evaluate the model
+accuracy = accuracy_score(y_test, y_pred)
+conf_matrix = confusion_matrix(y_test, y_pred)
+report = classification_report(y_test, y_pred)
+# Print the results
+print("Best Parameters:", best_params)
+print("Accuracy:", accuracy)
+print("Confusion Matrix:\n", conf_matrix)
+print("Classification Report:\n", report)
+
+#%%
+
+import numpy as np
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+from sklearn.utils.class_weight import compute_class_weight
+
+# Define the features and target variable
+features = ['PRENEI_MENS', 'PRELIQ_MENS', 'PRETOTM_MENS', 'T_MENS', 'EVAP_MENS', 'ETP_MENS', 'SWI_MENS','SWI_MENS','ECOULEMENT_MENS']
+X = w[features]  # Features
+y = pd.DataFrame(w['dry'])     # Target variable (binary: 1 or 0)
+
+# Compute class weights
+class_weights = compute_class_weight('balanced', classes=np.array([0, 1]), y=y)  # Convert [0, 1] to np.array
+class_weight_dict = {0: class_weights[0], 1: class_weights[1]}  # Create a dictionary for class weights
+
+# Split the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Set up the parameter grid for the class_weight of class 1 (we will use the balanced weights)
+param_grid = {
+    'class_weight': [class_weight_dict]  # Using computed balanced weights
+}
+
+# Initialize the Random Forest Classifier
+model = RandomForestClassifier(random_state=42)
+
+# Perform Grid Search with Cross Validation
+grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=5, scoring='accuracy')
+
+# Fit the grid search to the training data
+grid_search.fit(X_train, y_train)
+
+# Get the best parameters and model
+best_params = grid_search.best_params_
+best_model = grid_search.best_estimator_
+
+# Predict on the testing data with the best model
+y_pred = best_model.predict(X_test)
 
 # Evaluate the model
 accuracy = accuracy_score(y_test, y_pred)
 conf_matrix = confusion_matrix(y_test, y_pred)
 report = classification_report(y_test, y_pred)
 
-#%%
+# Print the results
+print("Best Parameters:", best_params)
+print("Accuracy:", accuracy)
+print("Confusion Matrix:\n", conf_matrix)
+print("Classification Report:\n", report)
 
-def plot_feature_importances(coefficients, feature_names, model_name):
-    """
-    Plots the feature importances based on the coefficients of the model.
-    
-    Parameters:
-    - coefficients: Array of model coefficients (absolute values for importance).
-    - feature_names: List of feature names corresponding to the coefficients.
-    - model_name: String name of the model for labeling the plot.
-    """
-    import matplotlib.pyplot as plt
-    import pandas as pd
-    import seaborn as sns
-    
-    # Create a DataFrame for coefficients and feature names
-    feature_importance = pd.DataFrame({
-        'Feature': feature_names,
-        'Importance': np.abs(coefficients)
-    }).sort_values(by='Importance', ascending=False)
-    
-    # Plot the importances
-    plt.figure(figsize=(10, 6))
-    sns.barplot(x='Importance', y='Feature', data=feature_importance, palette='viridis')
-    plt.title(f'Feature Importances - {model_name}')
-    plt.xlabel('Coefficient Magnitude (Feature Importance)')
-    plt.ylabel('Features')
-    plt.tight_layout()
-    plt.show()
 
-# Call the function for your logistic regression model
-lr_model = model  # Your logistic regression model
-plot_feature_importances(lr_model.coef_[0], features, 'Logistic Regression')
+
+
+
