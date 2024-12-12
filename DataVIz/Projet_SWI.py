@@ -16,11 +16,12 @@ import geopandas as gpd
 import plotly.express as px
 from shapely.geometry import Point
 from scipy.spatial import cKDTree
+import pickle
 #
 #https://www.data.gouv.fr/fr/datasets/contours-des-communes-de-france-simplifie-avec-regions-et-departement-doutre-mer-rapproches/
 #
 
-#%% Lecture des données
+# Lecture des données
 CAT= pd.read_csv("data/CATNAT.csv")
 Commune = gpd.read_file("data/commune.json" )    
 df4 = pd.read_csv('data\MENS_SIM2_2010-2019.csv',delimiter=';' )
@@ -33,7 +34,7 @@ data=pd.concat([df1,df2,df3,df4,df5] ,ignore_index=True)
 del df1, df2, df3, df4 ,df5
 # On limite les donnée qu'on utilise
 CAT = CAT.drop(columns=['cod_nat_catnat', 'num_risque_jo', 'dat_pub_jo', 'dat_maj'])
-Commune = Commune.drop(columns=[ 'id', 'dep', 'reg', 'xcl2154', 'ycl2154',        ])
+Commune = Commune.drop(columns=[ 'id', 'dep', 'xcl2154', 'ycl2154'])
 data = data.drop(columns=["SSWI1_MENS","SSWI6_MENS","SSWI12_MENS"])
 dates = pd.date_range(end="2022-12-31", periods=60, freq='M')
 CAT['dat_fin'] = pd.to_datetime(CAT['dat_fin'])
@@ -50,7 +51,7 @@ Communes = Commune.merge(dates, how='cross')
 Communes = Communes.rename(columns={0: "DATE"})
 Communes["dry"] = 0
 
-#%% On implimante nos catasphrophe , code assez long ~30mn a tournée
+#On implimante nos catasphrophe , code assez long ~30mn a tournée
 i=0;
 for code in pd.unique(Communes["codgeo"]):
     i+=1
@@ -68,8 +69,8 @@ for code in pd.unique(Communes["codgeo"]):
             # Update 'dry' to 1 where condition is True
             Communes.loc[sample[condition].index, "dry"] = 1
 
-#%% Recuper les résultat précedent pour éviter d'avoir a refaire tourner le code
-Communes=pd.read_pickle("CommunesCopy")
+#Recuper les résultat précedent pour éviter d'avoir a refaire tourner le code
+#Communes=pd.read_pickle("CommunesCopy")
 #%Communes=Communes.rename(columns= {"geometry" : "formeCommune" })
 
 
@@ -151,110 +152,14 @@ def nearest_temperature_by_time(ville, temperature, date_col_ville, date_col_tem
 
 
 w = nearest_temperature_by_time(Communes,gdf_wgs84,"DATE","DATE")
-
-
-
-#%%
-import numpy as np
-from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
-from sklearn.utils.class_weight import compute_class_weight
-
-# Define the features and target variable
-features = ['PRENEI_MENS', 'PRELIQ_MENS', 'PRETOTM_MENS', 'T_MENS', 'EVAP_MENS', 'ETP_MENS', 'SWI_MENS']
-X = w[features]  # Features
-y = w['dry']    # Target variable (binary: 1 or 0)
-
-# Compute class weights
-class_weights = compute_class_weight('balanced', classes=np.array([0, 1]), y=y)  # Convert [0, 1] to np.array
-class_weight_dict = {0: class_weights[0], 1: class_weights[1]}  # Create a dictionary for class weights
-
-# Split the data into training and testing sets
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-# Set up the parameter grid for the class_weight of class 1 (we will use the balanced weights)
-param_grid = {
-    'class_weight': [class_weight_dict]  # Using computed balanced weights
-}
-
-# Initialize the Logistic Regression model
-model = LogisticRegression(max_iter=1000, random_state=42)
-
-# Perform Grid Search with Cross Validation
-grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=5, scoring='accuracy')
-
-# Fit the grid search to the training data
-grid_search.fit(X_train, y_train)
-
-# Get the best parameters and model
-best_params = grid_search.best_params_
-best_model = grid_search.best_estimator_
-# Predict on the testing data with the best model
-y_pred = best_model.predict(X_test)
-# Evaluate the model
-accuracy = accuracy_score(y_test, y_pred)
-conf_matrix = confusion_matrix(y_test, y_pred)
-report = classification_report(y_test, y_pred)
-# Print the results
-print("Best Parameters:", best_params)
-print("Accuracy:", accuracy)
-print("Confusion Matrix:\n", conf_matrix)
-print("Classification Report:\n", report)
+w = w.drop(columns=['SPI1_MENS','SPI3_MENS', 'SPI6_MENS', 'SPI12_MENS', 'SSWI3_MENS', 'ECOULEMENT_MENS','KEY','year_month_ville', 'centroid', 'nearest_temp_index','distance_to_temp', 'LAMBX', 'LAMBY'])
+data = w
+data=data.drop(columns=['geometry_temp'])
 
 #%%
 
-import numpy as np
-from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
-from sklearn.utils.class_weight import compute_class_weight
-
-# Define the features and target variable
-features = ['PRENEI_MENS', 'PRELIQ_MENS', 'PRETOTM_MENS', 'T_MENS', 'EVAP_MENS', 'ETP_MENS', 'SWI_MENS','SWI_MENS','ECOULEMENT_MENS']
-X = w[features]  # Features
-y = pd.DataFrame(w['dry'])     # Target variable (binary: 1 or 0)
-
-# Compute class weights
-class_weights = compute_class_weight('balanced', classes=np.array([0, 1]), y=y)  # Convert [0, 1] to np.array
-class_weight_dict = {0: class_weights[0], 1: class_weights[1]}  # Create a dictionary for class weights
-
-# Split the data into training and testing sets
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-# Set up the parameter grid for the class_weight of class 1 (we will use the balanced weights)
-param_grid = {
-    'class_weight': [class_weight_dict]  # Using computed balanced weights
-}
-
-# Initialize the Random Forest Classifier
-model = RandomForestClassifier(random_state=42)
-
-# Perform Grid Search with Cross Validation
-grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=5, scoring='accuracy')
-
-# Fit the grid search to the training data
-grid_search.fit(X_train, y_train)
-
-# Get the best parameters and model
-best_params = grid_search.best_params_
-best_model = grid_search.best_estimator_
-
-# Predict on the testing data with the best model
-y_pred = best_model.predict(X_test)
-
-# Evaluate the model
-accuracy = accuracy_score(y_test, y_pred)
-conf_matrix = confusion_matrix(y_test, y_pred)
-report = classification_report(y_test, y_pred)
-
-# Print the results
-print("Best Parameters:", best_params)
-print("Accuracy:", accuracy)
-print("Confusion Matrix:\n", conf_matrix)
-print("Classification Report:\n", report)
-
-
-
+for var in list(globals().keys()):  # Use list() to avoid runtime modification errors
+    if var != "data" and not var.startswith("__"):  # Keep `w` and special variables like __name__
+        del globals()[var]
 
 
